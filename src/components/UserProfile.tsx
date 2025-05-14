@@ -75,31 +75,73 @@ export function UserProfile() {
   });
 
   useEffect(() => {
-    fetchUserData();
-    fetchMembership();
+    checkAuthAndFetchData();
   }, []);
+
+  const checkAuthAndFetchData = async () => {
+    try {
+      // First check if we have a valid session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        throw sessionError;
+      }
+
+      if (!session) {
+        // No valid session, redirect to login
+        navigate('/login');
+        return;
+      }
+
+      // If we have a session, try to refresh it to ensure we have a valid token
+      const { data: { session: refreshedSession }, error: refreshError } = 
+        await supabase.auth.refreshSession();
+
+      if (refreshError) {
+        throw refreshError;
+      }
+
+      if (!refreshedSession) {
+        // Session refresh failed, redirect to login
+        navigate('/login');
+        return;
+      }
+
+      // Now that we have a valid session, fetch user data
+      await fetchUserData();
+      await fetchMembership();
+    } catch (error) {
+      console.error('Auth check error:', error);
+      navigate('/login');
+    }
+  };
 
   const fetchUserData = async () => {
     try {
       setLoading(true);
       
       if (isSupabaseConnected()) {
-        // Get current user
-        const { data: { user } } = await supabase.auth.getUser();
+        // Get current user with refreshed session
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError) {
+          throw userError;
+        }
         
         if (!user) {
-          throw new Error('المستخدم غير مسجل الدخول');
+          navigate('/login');
+          return;
         }
         
         // Get user profile
-        const { data: profile, error } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('trainee_profiles')
           .select('*')
           .eq('id', user.id)
           .single();
           
-        if (error) {
-          throw error;
+        if (profileError) {
+          throw profileError;
         }
         
         if (profile) {
@@ -172,6 +214,10 @@ export function UserProfile() {
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
+      // If there's an auth error, redirect to login
+      if (error.message?.includes('JWT') || error.message?.includes('session')) {
+        navigate('/login');
+      }
     } finally {
       setLoading(false);
     }
@@ -673,6 +719,7 @@ export function UserProfile() {
                     onChange={(e) => setNotificationSettings({
                       ...notificationSettings,
                       emailNotifications: e.target.checked
+                
                     })}
                   />
                   <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0AE7F2]"></div>
