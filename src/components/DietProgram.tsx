@@ -11,7 +11,7 @@ interface DietProgramProps {}
 interface AssignedMeal {
   id: string;
   mealId: string;
-  dayOfWeek: number; // 0 = Sunday, 6 = Saturday
+  dayOfWeek: number;
   timing: string;
   mealName?: string;
   calories?: number;
@@ -49,18 +49,50 @@ export function DietProgram({}: DietProgramProps) {
   const [totalCalories, setTotalCalories] = useState(0);
   const [completedMeals, setCompletedMeals] = useState(0);
   const [scheduleId, setScheduleId] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    fetchMeals();
-  }, [selectedDate]);
+    checkAuth();
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchMeals();
+    }
+  }, [selectedDate, isAuthenticated]);
+
+  const checkAuth = async () => {
+    try {
+      if (isSupabaseConnected()) {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError) throw authError;
+        
+        if (!user) {
+          navigate('/login', { replace: true });
+          return;
+        }
+        
+        setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(true);
+      }
+    } catch (err) {
+      console.error('Authentication error:', err);
+      navigate('/login', { replace: true });
+    }
+  };
 
   const fetchMeals = async () => {
     try {
+      if (!isAuthenticated) {
+        return;
+      }
+
       setLoading(true);
       setError(null);
 
       if (isSupabaseConnected()) {
-        // Get current user
         const { data: { user } } = await supabase.auth.getUser();
         
         if (!user) {
@@ -70,7 +102,6 @@ export function DietProgram({}: DietProgramProps) {
         const dayOfWeek = selectedDate.getDay();
         const weekStartDate = getWeekStartDate(selectedDate);
 
-        // Get or create weekly schedule
         const { data: existingSchedule, error: scheduleError } = await supabase
           .from('weekly_schedules')
           .select('id')
@@ -84,7 +115,6 @@ export function DietProgram({}: DietProgramProps) {
 
         let currentScheduleId;
         if (!existingSchedule) {
-          // Create new schedule if none exists
           const { data: newSchedule, error: createError } = await supabase
             .from('weekly_schedules')
             .upsert({
@@ -102,7 +132,6 @@ export function DietProgram({}: DietProgramProps) {
 
         setScheduleId(currentScheduleId);
 
-        // Get meals for the selected day
         const { data: mealData, error: mealsError } = await supabase
           .from('schedule_meals')
           .select(`
@@ -127,7 +156,6 @@ export function DietProgram({}: DietProgramProps) {
 
         if (mealsError) throw mealsError;
 
-        // Format meals by timing
         const breakfast: AssignedMeal[] = [];
         const lunch: AssignedMeal[] = [];
         const dinner: AssignedMeal[] = [];
@@ -162,10 +190,8 @@ export function DietProgram({}: DietProgramProps) {
           'العشاء': dinner
         });
 
-        // Calculate total calories and completed meals
         calculateTotalCalories(breakfast, lunch, dinner);
       } else {
-        // Mock data for development
         const breakfast: AssignedMeal[] = [
           { 
             id: '1', 
@@ -233,7 +259,6 @@ export function DietProgram({}: DietProgramProps) {
           'العشاء': dinner
         });
 
-        // Calculate total calories and completed meals
         calculateTotalCalories(breakfast, lunch, dinner);
       }
     } catch (err) {
@@ -246,13 +271,12 @@ export function DietProgram({}: DietProgramProps) {
 
   const getWeekStartDate = (date: Date): string => {
     const d = new Date(date);
-    const day = d.getDay(); // 0 = Sunday, 6 = Saturday
-    d.setDate(d.getDate() - day); // Go to the start of the week (Sunday)
+    const day = d.getDay();
+    d.setDate(d.getDate() - day);
     return d.toISOString().split('T')[0];
   };
 
   const calculateTotalCalories = (breakfast: AssignedMeal[], lunch: AssignedMeal[], dinner: AssignedMeal[]) => {
-    // Calculate total calories from completed meals
     const allMeals = [...breakfast, ...lunch, ...dinner];
     const completed = allMeals.filter(meal => meal.status === 'consumed');
     
@@ -265,7 +289,6 @@ export function DietProgram({}: DietProgramProps) {
 
   const handleMealStatus = async (mealId: string, status: 'pending' | 'consumed' | 'skipped') => {
     try {
-      // Find the meal in our state
       let foundMeal: AssignedMeal | undefined;
       let mealCategory: string | undefined;
       
@@ -280,7 +303,6 @@ export function DietProgram({}: DietProgramProps) {
       
       if (!foundMeal || !mealCategory) return;
       
-      // Update in database if connected
       if (isSupabaseConnected()) {
         const { error } = await supabase
           .from('schedule_meals')
@@ -293,7 +315,6 @@ export function DietProgram({}: DietProgramProps) {
         if (error) throw error;
       }
       
-      // Update local state
       setAssignedMeals(prev => {
         const updatedMeals = { ...prev };
         updatedMeals[mealCategory!] = updatedMeals[mealCategory!].map(meal => 
@@ -302,7 +323,6 @@ export function DietProgram({}: DietProgramProps) {
         return updatedMeals;
       });
       
-      // Recalculate calories
       const allMeals = [
         ...assignedMeals['الفطور'], 
         ...assignedMeals['الغداء'], 
@@ -318,11 +338,9 @@ export function DietProgram({}: DietProgramProps) {
       setTotalCalories(totalCals + customCals);
       setCompletedMeals(completed.length);
       
-      // Update performance in database
       if (isSupabaseConnected()) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          // Get completed exercises count
           const { data } = await supabase
             .from('trainee_performance')
             .select('completed_exercises')
@@ -332,7 +350,6 @@ export function DietProgram({}: DietProgramProps) {
             
           const completedExercises = data?.completed_exercises || 0;
           
-          // Update performance record
           await supabase.rpc('calculate_trainee_performance', {
             p_trainee_id: user.id,
             p_date: new Date().toISOString().split('T')[0]
@@ -348,7 +365,6 @@ export function DietProgram({}: DietProgramProps) {
   const handleAddMeal = async (meal: CustomMeal) => {
     try {
       if (isSupabaseConnected() && scheduleId) {
-        // First add the meal to the meals table
         const { data: newMeal, error: mealError } = await supabase
           .from('meals')
           .insert({
@@ -366,7 +382,6 @@ export function DietProgram({}: DietProgramProps) {
           
         if (mealError) throw mealError;
         
-        // Then add it to the schedule
         const { data: scheduleMeal, error: scheduleError } = await supabase
           .from('schedule_meals')
           .insert({
@@ -374,20 +389,16 @@ export function DietProgram({}: DietProgramProps) {
             meal_id: newMeal.id,
             day_of_week: selectedDate.getDay(),
             timing: meal.category,
-            status: 'consumed' // Mark as consumed since it's a custom meal
+            status: 'consumed'
           })
           .select()
           .single();
           
         if (scheduleError) throw scheduleError;
         
-        // Refresh meals
         fetchMeals();
       } else {
-        // For development without database connection
         setCustomMeals(prev => [...prev, meal]);
-        
-        // Update total calories
         setTotalCalories(prev => prev + meal.calories);
         setCompletedMeals(prev => prev + 1);
       }
@@ -400,13 +411,8 @@ export function DietProgram({}: DietProgramProps) {
   };
 
   const handleRemoveCustomMeal = (index: number) => {
-    // Get the meal being removed to subtract its calories
     const removedMeal = customMeals[index];
-    
-    // Remove the meal from the array
     setCustomMeals(prev => prev.filter((_, i) => i !== index));
-    
-    // Update total calories
     setTotalCalories(prev => prev - removedMeal.calories);
     setCompletedMeals(prev => prev - 1);
   };
@@ -420,7 +426,6 @@ export function DietProgram({}: DietProgramProps) {
           throw new Error('المستخدم غير مسجل الدخول');
         }
         
-        // Add note to database
         const { error } = await supabase
           .from('trainee_notes')
           .insert({
@@ -432,7 +437,6 @@ export function DietProgram({}: DietProgramProps) {
           
         if (error) throw error;
         
-        // Send notification to trainer
         await supabase
           .from('notifications')
           .insert({
@@ -440,7 +444,7 @@ export function DietProgram({}: DietProgramProps) {
             message: `أضاف المتدرب ملاحظات جديدة حول النظام الغذائي`,
             type: 'meal',
             sender_id: user.id,
-            recipient_id: null // Will be sent to all trainers
+            recipient_id: null
           });
       }
       
@@ -507,7 +511,6 @@ export function DietProgram({}: DietProgramProps) {
 
   return (
     <div className="h-full flex flex-col bg-[#0A0F1C] text-white">
-      {/* Background */}
       <div className="bg-base">
         <div className="bg-overlay">
           <div className="bg-pattern" />
@@ -515,7 +518,6 @@ export function DietProgram({}: DietProgramProps) {
       </div>
 
       <div className="relative z-10 flex flex-col h-full">
-        {/* Header */}
         <div className="header-base">
           <div className="flex justify-between items-center">
             <button onClick={handleBack} className="text-white">
@@ -526,9 +528,20 @@ export function DietProgram({}: DietProgramProps) {
           </div>
         </div>
 
-        {/* Main Content */}
         <div className="flex-1 overflow-y-auto content-container">
-          {loading ? (
+          {!isAuthenticated ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <p className="text-gray-400 mb-4">يرجى تسجيل الدخول للوصول إلى برنامجك الغذائي</p>
+                <button 
+                  onClick={() => navigate('/login')}
+                  className="bg-[#0AE7F2] text-black px-6 py-2 rounded-xl font-bold hover:bg-[#0AE7F2]/90"
+                >
+                  تسجيل الدخول
+                </button>
+              </div>
+            </div>
+          ) : loading ? (
             <div className="flex items-center justify-center h-64">
               <div className="w-12 h-12 border-4 border-[#0AE7F2] border-t-transparent rounded-full animate-spin"></div>
             </div>
@@ -544,7 +557,6 @@ export function DietProgram({}: DietProgramProps) {
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Total Calories */}
               <div className="card-base">
                 <h2 className="text-lg font-bold mb-4">إجمالي السعرات المستهلكة</h2>
                 <div className="text-center">
@@ -553,7 +565,6 @@ export function DietProgram({}: DietProgramProps) {
                 </div>
               </div>
 
-              {/* Date Navigation */}
               <div className="flex justify-between items-center">
                 <button onClick={handlePrevDay} className="text-[#0AE7F2]">
                   <ChevronRight size={24} />
@@ -567,7 +578,6 @@ export function DietProgram({}: DietProgramProps) {
                 </button>
               </div>
 
-              {/* Meals */}
               {['الفطور', 'الغداء', 'العشاء'].map((mealType) => (
                 <div key={mealType} className="card-base">
                   <h2 className="text-lg font-bold mb-4">{mealType}</h2>
@@ -639,7 +649,6 @@ export function DietProgram({}: DietProgramProps) {
                 </div>
               ))}
 
-              {/* Custom Meals */}
               {customMeals.length > 0 && (
                 <div className="card-base">
                   <h2 className="text-lg font-bold mb-4">وجباتك المخصصة</h2>
@@ -669,7 +678,6 @@ export function DietProgram({}: DietProgramProps) {
                 </div>
               )}
 
-              {/* Add Meal Button */}
               <button
                 onClick={() => setShowAddMealForm(true)}
                 className="w-full bg-[#0AE7F2] text-black py-3 rounded-xl font-bold hover:bg-[#0AE7F2]/90"
@@ -677,7 +685,6 @@ export function DietProgram({}: DietProgramProps) {
                 <Plus size={20} className="inline mr-2" /> إضافة وجبة جديدة
               </button>
 
-              {/* Notes */}
               <div className="mt-6">
                 <h2 className="text-lg font-bold mb-2">ملاحظات للمدرب</h2>
                 <textarea
@@ -688,7 +695,6 @@ export function DietProgram({}: DietProgramProps) {
                 />
               </div>
 
-              {/* Send Notes Button */}
               <button
                 onClick={handleSendToTrainer}
                 className="w-full bg-[#0AE7F2] text-black py-3 rounded-xl font-bold hover:bg-[#0AE7F2]/90 mt-4"
@@ -699,10 +705,8 @@ export function DietProgram({}: DietProgramProps) {
           )}
         </div>
 
-        {/* Bottom Navigation */}
         <BottomNav />
 
-        {/* Add Meal Form */}
         {showAddMealForm && (
           <AddMealForm
             onClose={() => setShowAddMealForm(false)}
@@ -713,3 +717,5 @@ export function DietProgram({}: DietProgramProps) {
     </div>
   );
 }
+
+export { DietProgram }
