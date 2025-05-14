@@ -80,39 +80,45 @@ export function UserProfile() {
 
   const checkAuthAndFetchData = async () => {
     try {
-      // First check if we have a valid session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      setLoading(true);
       
-      if (sessionError) {
-        throw sessionError;
+      if (isSupabaseConnected()) {
+        // First check if we have a valid session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        if (!session) {
+          // No valid session, redirect to login
+          navigate('/trainee/login');
+          return;
+        }
+
+        // If we have a session, try to refresh it to ensure we have a valid token
+        const { data: { session: refreshedSession }, error: refreshError } = 
+          await supabase.auth.refreshSession();
+
+        if (refreshError) {
+          throw refreshError;
+        }
+
+        if (!refreshedSession) {
+          // Session refresh failed, redirect to login
+          navigate('/trainee/login');
+          return;
+        }
       }
-
-      if (!session) {
-        // No valid session, redirect to login
-        navigate('/trainee/login');
-        return;
-      }
-
-      // If we have a session, try to refresh it to ensure we have a valid token
-      const { data: { session: refreshedSession }, error: refreshError } = 
-        await supabase.auth.refreshSession();
-
-      if (refreshError) {
-        throw refreshError;
-      }
-
-      if (!refreshedSession) {
-        // Session refresh failed, redirect to login
-        navigate('/trainee/login');
-        return;
-      }
-
+      
       // Now that we have a valid session, fetch user data
       await fetchUserData();
       await fetchMembership();
     } catch (error) {
       console.error('Auth check error:', error);
       navigate('/trainee/login');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -814,6 +820,14 @@ export function UserProfile() {
         return null;
     }
   };
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-[#0A0F1C]">
+        <div className="w-12 h-12 border-4 border-[#0AE7F2] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col bg-[#0A0F1C] text-white p-4">
