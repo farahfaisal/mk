@@ -717,5 +717,3 @@ export function DietProgram({}: DietProgramProps) {
     </div>
   );
 }
-
-export { DietProgram }
