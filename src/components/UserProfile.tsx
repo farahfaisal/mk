@@ -89,7 +89,7 @@ export function UserProfile() {
 
       if (!session) {
         // No valid session, redirect to login
-        navigate('/login');
+        navigate('/trainee/login');
         return;
       }
 
@@ -103,7 +103,7 @@ export function UserProfile() {
 
       if (!refreshedSession) {
         // Session refresh failed, redirect to login
-        navigate('/login');
+        navigate('/trainee/login');
         return;
       }
 
@@ -112,7 +112,7 @@ export function UserProfile() {
       await fetchMembership();
     } catch (error) {
       console.error('Auth check error:', error);
-      navigate('/login');
+      navigate('/trainee/login');
     }
   };
 
@@ -129,7 +129,7 @@ export function UserProfile() {
         }
         
         if (!user) {
-          navigate('/login');
+          navigate('/trainee/login');
           return;
         }
         
@@ -216,7 +216,7 @@ export function UserProfile() {
       console.error('Error fetching user data:', error);
       // If there's an auth error, redirect to login
       if (error.message?.includes('JWT') || error.message?.includes('session')) {
-        navigate('/login');
+        navigate('/trainee/login');
       }
     } finally {
       setLoading(false);
@@ -719,7 +719,6 @@ export function UserProfile() {
                     onChange={(e) => setNotificationSettings({
                       ...notificationSettings,
                       emailNotifications: e.target.checked
-                
                     })}
                   />
                   <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0AE7F2]"></div>
